@@ -24,7 +24,13 @@ export default function DashboardPage() {
   // Load API key from localStorage
   useEffect(() => {
     const savedKey = localStorage.getItem('anthropic_api_key');
-    if (savedKey) setApiKey(savedKey);
+    if (savedKey) {
+      setApiKey(savedKey);
+    } else {
+      // Set default API key to "111"
+      setApiKey('111');
+      localStorage.setItem('anthropic_api_key', '111');
+    }
   }, []);
 
   // Fetch available configs from backend
@@ -87,8 +93,8 @@ export default function DashboardPage() {
             Choose from specialized agent configurations or build your own
           </p>
 
-          {/* API Key Input */}
-          <div className="max-w-md mx-auto">
+          {/* API Key Input - Hidden */}
+          <div className="max-w-md mx-auto hidden">
             <input
               type="password"
               placeholder="Enter your Anthropic API Key"
@@ -96,7 +102,6 @@ export default function DashboardPage() {
               onChange={(e) => setApiKey(e.target.value)}
               className="w-full px-4 py-3 rounded-lg glass focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm"
             />
-            <p className="text-xs text-gray-500 mt-2">Your API key is stored locally and never sent to our servers</p>
           </div>
         </div>
 

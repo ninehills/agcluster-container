@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 from fastapi import HTTPException
 
 from .base import ContainerProvider, ContainerInfo, ProviderConfig
+from ..config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -74,6 +75,14 @@ class DockerProvider(ContainerProvider):
                 "ANTHROPIC_API_KEY": config.api_key,
                 "AGENT_CONFIG_JSON": json.dumps(config.agent_config, default=str),
             }
+
+            # Inject CONTAINER_ENV_* environment variables
+            container_env_vars = settings.get_container_env_vars()
+            if container_env_vars:
+                logger.info(
+                    f"Injecting {len(container_env_vars)} environment variables from CONTAINER_ENV_* config"
+                )
+                env.update(container_env_vars)
 
             # Create volume first
             volume = self.docker_client.volumes.create(name=volume_name)

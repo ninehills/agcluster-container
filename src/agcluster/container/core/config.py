@@ -1,7 +1,8 @@
 """Configuration settings for AgCluster"""
 
+import os
 from pydantic_settings import BaseSettings
-from typing import Optional, List
+from typing import Optional, List, Dict
 
 
 class Settings(BaseSettings):
@@ -19,9 +20,7 @@ class Settings(BaseSettings):
     container_provider: str = "docker"  # docker | fly_machines | cloudflare | vercel
 
     # Docker Settings
-    docker_network: str = (
-        "agcluster-container_agcluster-network"  # Docker Compose creates network with project prefix
-    )
+    docker_network: str = "agcluster-container_agcluster-network"  # Docker Compose creates network with project prefix
     agent_image: str = "agcluster/agent:latest"
 
     # Container Resource Limits (defaults when not specified in config)
@@ -57,6 +56,28 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         case_sensitive = False
+        extra = "allow"  # Allow CONTAINER_ENV_* variables to be present without validation errors
+
+    def get_container_env_vars(self) -> Dict[str, str]:
+        """
+        Extract environment variables prefixed with CONTAINER_ENV_ for injection into containers.
+
+        The prefix CONTAINER_ENV_ will be removed from the variable name.
+        For example, CONTAINER_ENV_HTTP_PROXY becomes HTTP_PROXY in the container.
+
+        Returns:
+            Dict[str, str]: Dictionary of environment variables to inject into containers
+        """
+        container_env = {}
+        prefix = "CONTAINER_ENV_"
+
+        for key, value in os.environ.items():
+            if key.startswith(prefix):
+                # Remove prefix and add to container env
+                container_key = key[len(prefix) :]
+                container_env[container_key] = value
+
+        return container_env
 
 
 # Global settings instance
