@@ -65,16 +65,32 @@ class Settings(BaseSettings):
         The prefix CONTAINER_ENV_ will be removed from the variable name.
         For example, CONTAINER_ENV_HTTP_PROXY becomes HTTP_PROXY in the container.
 
+        Variables are collected from two sources:
+        1. Pydantic Settings extra fields (from .env file)
+        2. OS environment variables (runtime)
+
         Returns:
             Dict[str, str]: Dictionary of environment variables to inject into containers
         """
         container_env = {}
-        prefix = "CONTAINER_ENV_"
+        prefix_upper = "CONTAINER_ENV_"
+        prefix_lower = "container_env_"
 
+        # First, check Pydantic Settings extra fields (from .env file)
+        # These are stored in __pydantic_extra__ when extra="allow"
+        if hasattr(self, "__pydantic_extra__") and self.__pydantic_extra__:
+            for key, value in self.__pydantic_extra__.items():
+                # Pydantic converts to lowercase due to case_sensitive=False
+                if key.lower().startswith(prefix_lower):
+                    # Remove prefix and convert to uppercase for container
+                    container_key = key[len(prefix_lower) :].upper()
+                    container_env[container_key] = str(value)
+
+        # Second, check OS environment variables (these take precedence)
         for key, value in os.environ.items():
-            if key.startswith(prefix):
+            if key.startswith(prefix_upper):
                 # Remove prefix and add to container env
-                container_key = key[len(prefix) :]
+                container_key = key[len(prefix_upper) :]
                 container_env[container_key] = value
 
         return container_env

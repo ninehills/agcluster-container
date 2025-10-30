@@ -66,17 +66,21 @@ class TestProviderConfig:
             cpu_quota=100000,
             memory_limit="2g",
             storage_limit="5g",
-            allowed_tools=["Bash", "Read"],
-            system_prompt="Test prompt",
-            max_turns=50,
             api_key="test-key",
+            agent_config={
+                "id": "test-agent",
+                "name": "Test Agent",
+                "allowed_tools": ["Bash", "Read"],
+                "system_prompt": "Test prompt",
+                "max_turns": 50,
+            },
             platform_credentials={},
         )
 
         assert config.platform == "docker"
         assert config.cpu_quota == 100000
         assert config.memory_limit == "2g"
-        assert config.allowed_tools == ["Bash", "Read"]
+        assert config.agent_config["allowed_tools"] == ["Bash", "Read"]
         assert config.api_key == "test-key"
 
     def test_full_config(self):
@@ -86,10 +90,14 @@ class TestProviderConfig:
             cpu_quota=200000,
             memory_limit="4g",
             storage_limit="10g",
-            allowed_tools=["Bash", "Read", "Write", "Grep"],
-            system_prompt="You are a helpful AI assistant.",
-            max_turns=100,
             api_key="sk-ant-test",
+            agent_config={
+                "id": "full-agent",
+                "name": "Full Agent",
+                "allowed_tools": ["Bash", "Read", "Write", "Grep"],
+                "system_prompt": "You are a helpful AI assistant.",
+                "max_turns": 100,
+            },
             platform_credentials={"fly_api_token": "fly_token_123", "fly_app_name": "my-app"},
         )
 
@@ -103,10 +111,14 @@ class TestProviderConfig:
             cpu_quota=400000,  # 4 CPUs
             memory_limit="8g",
             storage_limit="20g",
-            allowed_tools=[],
-            system_prompt="",
-            max_turns=100,
             api_key="test",
+            agent_config={
+                "id": "resource-test",
+                "name": "Resource Test",
+                "allowed_tools": [],
+                "system_prompt": "",
+                "max_turns": 100,
+            },
             platform_credentials={},
         )
 
@@ -121,17 +133,21 @@ class TestProviderConfig:
             cpu_quota=100000,
             memory_limit="2g",
             storage_limit="5g",
-            allowed_tools=["Bash"],
-            system_prompt="Test",
-            max_turns=50,
             api_key="key",
+            agent_config={
+                "id": "dict-test",
+                "name": "Dict Test",
+                "allowed_tools": ["Bash"],
+                "system_prompt": "Test",
+                "max_turns": 50,
+            },
             platform_credentials={},
         )
 
         data = asdict(config)
         assert isinstance(data, dict)
         assert data["platform"] == "docker"
-        assert data["max_turns"] == 50
+        assert data["agent_config"]["max_turns"] == 50
 
 
 @pytest.mark.unit
@@ -237,10 +253,14 @@ class TestProviderMethodSignatures:
             cpu_quota=100000,
             memory_limit="2g",
             storage_limit="5g",
-            allowed_tools=[],
-            system_prompt="",
-            max_turns=50,
             api_key="test",
+            agent_config={
+                "id": "test-signature",
+                "name": "Test Signature",
+                "allowed_tools": [],
+                "system_prompt": "",
+                "max_turns": 50,
+            },
             platform_credentials={},
         )
 

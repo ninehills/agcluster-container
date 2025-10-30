@@ -93,7 +93,7 @@ class TestAgentConfig:
             "TodoWrite",
             "NotebookEdit",
             "BashOutput",
-            "KillBash",
+            "KillShell",
             "ExitPlanMode",
             "ListMcpResources",
             "ReadMcpResource",

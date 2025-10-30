@@ -225,10 +225,14 @@ class ContainerManager:
             cpu_quota=settings.container_cpu_quota,
             memory_limit=settings.container_memory_limit,
             storage_limit=settings.container_storage_limit,
-            allowed_tools=(allowed_tools or settings.default_allowed_tools).split(","),
-            system_prompt=system_prompt or settings.default_system_prompt,
-            max_turns=100,  # Default
             api_key=api_key,
+            agent_config={
+                "id": f"legacy-{session_id}",
+                "name": "Legacy Agent",
+                "allowed_tools": (allowed_tools or settings.default_allowed_tools).split(","),
+                "system_prompt": system_prompt or settings.default_system_prompt,
+                "max_turns": 100,  # Default
+            },
             platform_credentials={},
         )
 

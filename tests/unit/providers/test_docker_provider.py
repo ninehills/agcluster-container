@@ -22,10 +22,14 @@ def provider_config():
         cpu_quota=200000,
         memory_limit="4g",
         storage_limit="10g",
-        allowed_tools=["Bash", "Read", "Write", "Grep"],
-        system_prompt="You are a helpful AI assistant.",
-        max_turns=100,
         api_key="sk-ant-test-key",
+        agent_config={
+            "id": "test-agent",
+            "name": "Test Agent",
+            "allowed_tools": ["Bash", "Read", "Write", "Grep"],
+            "system_prompt": "You are a helpful AI assistant.",
+            "max_turns": 100,
+        },
         platform_credentials={},
     )
 
@@ -38,10 +42,14 @@ def provider_config_with_extra_files():
         cpu_quota=200000,
         memory_limit="4g",
         storage_limit="10g",
-        allowed_tools=["Bash", "Read", "Write", "Grep"],
-        system_prompt="You are a helpful AI assistant.",
-        max_turns=100,
         api_key="sk-ant-test-key",
+        agent_config={
+            "id": "test-agent-files",
+            "name": "Test Agent with Files",
+            "allowed_tools": ["Bash", "Read", "Write", "Grep"],
+            "system_prompt": "You are a helpful AI assistant.",
+            "max_turns": 100,
+        },
         platform_credentials={},
         extra_files={
             "CLAUDE.md": b"# Project Instructions\nThis is a test project.",
@@ -196,7 +204,7 @@ class TestCreateContainer:
 
         # Verify agent config JSON
         config_json = json.loads(env["AGENT_CONFIG_JSON"])
-        assert config_json["id"] == "docker"
+        assert config_json["id"] == "test-agent"  # From fixture
         assert config_json["allowed_tools"] == ["Bash", "Read", "Write", "Grep"]
         assert config_json["system_prompt"] == "You are a helpful AI assistant."
         assert config_json["max_turns"] == 100
@@ -1161,10 +1169,19 @@ class TestExtraFilesHandling:
         mock_volume.name = "agcluster-workspace-no-image"
         mock_volume.remove = Mock()
 
+        mock_temp_container = Mock()
+        mock_temp_container.id = "temp-fail"
+        mock_temp_container.put_archive = Mock()
+        mock_temp_container.stop = Mock()
+        mock_temp_container.remove = Mock()
+
         mock_client = Mock()
         mock_client.volumes = Mock()
         mock_client.volumes.create = Mock(return_value=mock_volume)
-        mock_client.containers.run = Mock(side_effect=docker.errors.ImageNotFound("not found"))
+        # First call (temp container) succeeds, second call (actual container) fails
+        mock_client.containers.run = Mock(
+            side_effect=[mock_temp_container, docker.errors.ImageNotFound("not found")]
+        )
 
         provider._docker_client = mock_client
 

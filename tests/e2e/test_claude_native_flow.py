@@ -15,15 +15,19 @@ from typing import AsyncIterator
 
 
 # API Configuration
+import os
+
 API_BASE_URL = "http://localhost:8000"
-ANTHROPIC_API_KEY = None  # Set via environment variable or pytest parameter
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")  # Get from environment variable
 
 
 @pytest.fixture(scope="module")
 def api_key():
     """API key fixture - set via environment or test parameter"""
-    # This will be passed as a parameter when running tests
-    return ANTHROPIC_API_KEY
+    key = ANTHROPIC_API_KEY
+    if not key:
+        pytest.skip("ANTHROPIC_API_KEY not set - skipping E2E tests")
+    return key
 
 
 @pytest.fixture(scope="module")

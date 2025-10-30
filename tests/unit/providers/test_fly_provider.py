@@ -21,10 +21,14 @@ def provider_config():
         cpu_quota=200000,  # 2 CPUs
         memory_limit="4g",
         storage_limit="10g",
-        allowed_tools=["Bash", "Read", "Write", "Grep"],
-        system_prompt="You are a helpful AI assistant.",
-        max_turns=100,
         api_key="sk-ant-test-key",
+        agent_config={
+            "id": "test-fly-agent",
+            "name": "Test Fly Agent",
+            "allowed_tools": ["Bash", "Read", "Write", "Grep"],
+            "system_prompt": "You are a helpful AI assistant.",
+            "max_turns": 100,
+        },
         platform_credentials={"fly_region": "iad"},
     )
 
@@ -199,10 +203,14 @@ class TestCreateContainer:
             cpu_quota=100000,
             memory_limit="2g",
             storage_limit="5g",
-            allowed_tools=["Bash"],
-            system_prompt="Test",
-            max_turns=50,
             api_key="test-key",
+            agent_config={
+                "id": "test-region",
+                "name": "Test Region",
+                "allowed_tools": ["Bash"],
+                "system_prompt": "Test",
+                "max_turns": 50,
+            },
             platform_credentials={"fly_region": "sjc"},
         )
 
@@ -243,10 +251,14 @@ class TestCreateContainer:
             cpu_quota=400000,  # 4 CPUs
             memory_limit="8g",
             storage_limit="20g",
-            allowed_tools=["Bash"],
-            system_prompt="Test",
-            max_turns=100,
             api_key="test-key",
+            agent_config={
+                "id": "test-cpu",
+                "name": "Test CPU",
+                "allowed_tools": ["Bash"],
+                "system_prompt": "Test",
+                "max_turns": 100,
+            },
             platform_credentials={},
         )
 
@@ -293,10 +305,14 @@ class TestCreateContainer:
                 cpu_quota=100000,
                 memory_limit=memory_limit,
                 storage_limit="10g",
-                allowed_tools=["Bash"],
-                system_prompt="Test",
-                max_turns=100,
                 api_key="test-key",
+                agent_config={
+                    "id": f"test-mem-{memory_limit}",
+                    "name": "Test Memory",
+                    "allowed_tools": ["Bash"],
+                    "system_prompt": "Test",
+                    "max_turns": 100,
+                },
                 platform_credentials={},
             )
 

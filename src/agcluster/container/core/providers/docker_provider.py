@@ -84,10 +84,8 @@ class DockerProvider(ContainerProvider):
 
             # Inject CONTAINER_ENV_* environment variables
             container_env_vars = settings.get_container_env_vars()
+            logger.info(f"Found {len(container_env_vars)} environment variables prefixed with CONTAINER_ENV_")
             if container_env_vars:
-                logger.info(
-                    f"Injecting {len(container_env_vars)} environment variables from CONTAINER_ENV_* config"
-                )
                 env.update(container_env_vars)
 
             # Create volume first
