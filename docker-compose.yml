@@ -19,13 +19,12 @@ services:
       - API_HOST=0.0.0.0
       - API_PORT=8000
       - API_DEBUG=true
-      - DOCKER_NETWORK=agcluster-container_agcluster-network
       - AGENT_IMAGE=agcluster/agent:latest
       - LOG_LEVEL=info
+    env_file:
+      - ./.env
     depends_on:
       - agent-builder
-    networks:
-      - agcluster-network
 
   # AgCluster UI (Next.js)
   ui:
@@ -41,8 +40,6 @@ services:
       - AGCLUSTER_API_URL=http://api:8000
     depends_on:
       - api
-    networks:
-      - agcluster-network
 
   # Build agent image (runs once)
   agent-builder:
@@ -51,12 +48,6 @@ services:
       dockerfile: docker/Dockerfile.agent
     image: agcluster/agent:latest
     command: ["echo", "Agent image built successfully"]
-    networks:
-      - agcluster-network
-
-networks:
-  agcluster-network:
-    driver: bridge
 
 volumes:
   agcluster-workspaces:
