@@ -60,33 +60,99 @@ class DockerProvider(ContainerProvider):
         """
         agent_id = f"agent-{uuid.uuid4().hex[:12]}"
         container_name = f"agcluster-{agent_id}"
+        volume_name = f"agcluster-workspace-{agent_id}"
 
         logger.info(f"Creating Docker container for session {session_id}, agent {agent_id}")
 
-        try:
-            # Prepare environment
-            # Handle system_prompt which can be str or SystemPromptPreset (Pydantic model)
-            system_prompt_value = config.system_prompt
-            if hasattr(system_prompt_value, "model_dump"):
-                # It's a Pydantic model (SystemPromptPreset), convert to dict
-                system_prompt_value = system_prompt_value.model_dump()
+        volume = None
+        temp_container = None
 
+        try:
+            # Prepare environment - use complete agent config
             env = {
                 "AGENT_ID": agent_id,
                 "ANTHROPIC_API_KEY": config.api_key,
-                "AGENT_CONFIG_JSON": json.dumps(
-                    {
-                        "id": config.platform,
-                        "name": f"Agent {agent_id}",
-                        "allowed_tools": config.allowed_tools,
-                        "system_prompt": system_prompt_value,
-                        "permission_mode": "acceptEdits",
-                        "max_turns": config.max_turns,
-                    }
-                ),
+                "AGENT_CONFIG_JSON": json.dumps(config.agent_config, default=str),
             }
 
-            # Create container
+            # Create volume first
+            volume = self.docker_client.volumes.create(name=volume_name)
+            logger.debug(f"Created volume {volume_name}")
+
+            # Pre-populate volume with extra files if provided
+            if config.extra_files:
+                logger.info(f"Pre-populating volume with {len(config.extra_files)} extra files")
+                try:
+                    # Create tar archive in memory
+                    tar_buffer = io.BytesIO()
+                    with tarfile.open(fileobj=tar_buffer, mode="w") as tar:
+                        for file_path, content in config.extra_files.items():
+                            logger.debug(
+                                f"Adding file to tar: {file_path} (size: {len(content)} bytes)"
+                            )
+
+                            # Create tarinfo
+                            tarinfo = tarfile.TarInfo(name=file_path)
+                            tarinfo.size = len(content)
+                            tarinfo.mode = 0o644  # rw-r--r--
+                            tarinfo.mtime = int(datetime.now(timezone.utc).timestamp())
+                            tarinfo.type = tarfile.REGTYPE  # Explicitly mark as regular file
+
+                            # Add file to tar
+                            tar.addfile(tarinfo, io.BytesIO(content))
+
+                            logger.debug(
+                                f"Added to tar: {file_path} - type={tarinfo.type}, "
+                                f"isfile={tarinfo.isfile()}, isdir={tarinfo.isdir()}"
+                            )
+
+                    tar_buffer.seek(0)
+                    tar_data = tar_buffer.getvalue()
+
+                    # Use temporary container to populate volume
+                    temp_container = self.docker_client.containers.run(
+                        image="agcluster/agent:latest",
+                        command="sleep 5",
+                        volumes={volume_name: {"bind": "/workspace", "mode": "rw"}},
+                        detach=True,
+                        remove=False,  # We'll remove it manually after upload
+                    )
+                    logger.debug(
+                        f"Created temporary container {temp_container.id[:12]} for file upload"
+                    )
+
+                    # Wait briefly for container to start
+                    await asyncio.sleep(0.5)
+
+                    # Upload files to volume via temporary container
+                    temp_container.put_archive("/workspace", tar_data)
+                    logger.info(
+                        f"Successfully pre-populated volume with {len(config.extra_files)} files"
+                    )
+
+                    # Stop and remove temporary container
+                    temp_container.stop(timeout=1)
+                    temp_container.remove()
+                    logger.debug(f"Cleaned up temporary container {temp_container.id[:12]}")
+                    temp_container = None
+
+                except Exception as e:
+                    logger.error(f"Error pre-populating volume with extra files: {e}")
+                    # Cleanup on failure
+                    if temp_container:
+                        try:
+                            temp_container.stop(timeout=1)
+                            temp_container.remove()
+                        except Exception as cleanup_e:
+                            logger.error(f"Error cleaning up temp container: {cleanup_e}")
+                    if volume:
+                        try:
+                            volume.remove()
+                        except Exception as cleanup_e:
+                            logger.error(f"Error cleaning up volume: {cleanup_e}")
+                    raise RuntimeError(f"Failed to pre-populate volume: {str(e)}")
+
+            # Create the actual agent container with pre-populated volume
             container = self.docker_client.containers.run(
                 image="agcluster/agent:latest",
                 name=container_name,
@@ -101,8 +167,8 @@ class DockerProvider(ContainerProvider):
                 # Security
                 security_opt=["no-new-privileges"],
                 cap_drop=["ALL"],
-                # Volume for workspace
-                volumes={f"agcluster-workspace-{agent_id}": {"bind": "/workspace", "mode": "rw"}},
+                # Volume for workspace (pre-populated with extra files)
+                volumes={volume_name: {"bind": "/workspace", "mode": "rw"}},
                 # Labels
                 labels={
                     "agcluster": "true",
@@ -136,45 +202,6 @@ class DockerProvider(ContainerProvider):
             except TimeoutError:
                 logger.warning("Health check timed out, but container is running")
 
-            # Upload extra files if provided
-            if config.extra_files:
-                logger.info(f"Uploading {len(config.extra_files)} extra files to container")
-                try:
-                    # Create tar archive in memory
-                    tar_buffer = io.BytesIO()
-                    with tarfile.open(fileobj=tar_buffer, mode="w") as tar:
-                        for file_path, content in config.extra_files.items():
-                            logger.debug(
-                                f"Adding file to tar: {file_path} (size: {len(content)} bytes)"
-                            )
-
-                            # Create tarinfo
-                            tarinfo = tarfile.TarInfo(name=file_path)
-                            tarinfo.size = len(content)
-                            tarinfo.mode = 0o644  # rw-r--r--
-                            tarinfo.mtime = int(datetime.now(timezone.utc).timestamp())
-                            tarinfo.type = tarfile.REGTYPE  # Explicitly mark as regular file
-
-                            # Add file to tar
-                            tar.addfile(tarinfo, io.BytesIO(content))
-
-                            logger.debug(
-                                f"Added to tar: {file_path} - type={tarinfo.type}, "
-                                f"isfile={tarinfo.isfile()}, isdir={tarinfo.isdir()}"
-                            )
-
-                    # Upload tar archive to container workspace
-                    tar_buffer.seek(0)
-                    tar_data = tar_buffer.getvalue()
-                    container.put_archive("/workspace", tar_data)
-
-                    logger.info(
-                        f"Successfully uploaded {len(config.extra_files)} extra files to /workspace"
-                    )
-                except Exception as e:
-                    logger.error(f"Error uploading extra files: {e}")
-                    # Continue even if upload fails - don't fail container creation
-
             # Create container info with API key hash for session ownership validation
             import hashlib
 
@@ -191,6 +218,7 @@ class DockerProvider(ContainerProvider):
                     "session_id": session_id,
                     "container_ip": container_ip,
                     "api_key_hash": api_key_hash,  # For session ownership validation
+                    "volume_name": volume_name,  # Track volume for cleanup
                 },
             )
 
@@ -201,14 +229,32 @@ class DockerProvider(ContainerProvider):
 
         except docker.errors.ImageNotFound:
             logger.error("Docker image agcluster/agent:latest not found")
+            # Cleanup volume on failure
+            if volume:
+                try:
+                    volume.remove()
+                except Exception as e:
+                    logger.error(f"Error cleaning up volume on failure: {e}")
             raise ValueError("Agent image not found: agcluster/agent:latest")
         except docker.errors.APIError as e:
             logger.error(f"Docker API error creating container: {e}")
+            # Cleanup resources on failure
+            if temp_container:
+                try:
+                    temp_container.stop(timeout=1)
+                    temp_container.remove()
+                except Exception as cleanup_e:
+                    logger.error(f"Error cleaning up temp container: {cleanup_e}")
+            if volume:
+                try:
+                    volume.remove()
+                except Exception as cleanup_e:
+                    logger.error(f"Error cleaning up volume: {cleanup_e}")
             raise RuntimeError(f"Failed to create container: {str(e)}")
 
     async def stop_container(self, container_id: str) -> bool:
         """
-        Stop and remove a Docker container.
+        Stop and remove a Docker container and its associated volume.
 
         Args:
             container_id: Container ID to stop
@@ -220,8 +266,26 @@ class DockerProvider(ContainerProvider):
             container = self.docker_client.containers.get(container_id)
             logger.info(f"Stopping container {container_id}")
 
+            # Get volume name from container info before removal
+            volume_name = None
+            for sid, info in list(self.active_containers.items()):
+                if info.container_id == container_id:
+                    volume_name = info.metadata.get("volume_name")
+                    break
+
             container.stop(timeout=10)
             container.remove()
+
+            # Remove volume if it exists
+            if volume_name:
+                try:
+                    volume = self.docker_client.volumes.get(volume_name)
+                    volume.remove()
+                    logger.info(f"Removed volume {volume_name}")
+                except docker.errors.NotFound:
+                    logger.debug(f"Volume {volume_name} not found (may have been already removed)")
+                except Exception as e:
+                    logger.warning(f"Error removing volume {volume_name}: {e}")
 
             # Remove from active containers
             session_id = None

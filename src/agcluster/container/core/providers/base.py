@@ -7,7 +7,7 @@ providers must implement, along with shared data models.
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Dict, Any, AsyncIterator
+from typing import Dict, Any, AsyncIterator, Optional, List, Literal
 
 
 @dataclass
@@ -40,10 +40,8 @@ class ProviderConfig:
         cpu_quota: CPU quota in Docker units (100000 = 1 CPU)
         memory_limit: Memory limit (e.g., "4g", "2048m")
         storage_limit: Storage limit (e.g., "10g")
-        allowed_tools: List of tools available to agent
-        system_prompt: System prompt for the agent
-        max_turns: Maximum conversation turns
         api_key: Anthropic API key
+        agent_config: Complete agent configuration dict (passed directly to container)
         platform_credentials: Platform-specific authentication credentials
         extra_files: Extra files to mount in the container (key: relative path, value: content in bytes)
     """
@@ -52,10 +50,8 @@ class ProviderConfig:
     cpu_quota: int
     memory_limit: str
     storage_limit: str
-    allowed_tools: list[str]
-    system_prompt: str
-    max_turns: int
     api_key: str
+    agent_config: Dict[str, Any]  # Complete agent config (id, name, allowed_tools, system_prompt, etc.)
     platform_credentials: Dict[str, Any] = field(default_factory=dict)
     extra_files: Dict[str, bytes] = field(default_factory=dict)
 

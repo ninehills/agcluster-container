@@ -143,7 +143,10 @@ class ContainerManager:
 
         logger.info(f"Creating container for session {session_id} with config {config_id}")
 
-        # Build provider config
+        # Build complete agent config dict (will be serialized to AGENT_CONFIG_JSON)
+        agent_config_dict = config.model_dump(exclude_none=True)
+
+        # Build provider config with complete agent configuration
         provider_config = ProviderConfig(
             platform=self.provider_name,
             cpu_quota=(
@@ -161,10 +164,8 @@ class ContainerManager:
                 if config.resource_limits
                 else settings.container_storage_limit
             ),
-            allowed_tools=config.allowed_tools,
-            system_prompt=config.system_prompt,
-            max_turns=config.max_turns,
             api_key=api_key,
+            agent_config=agent_config_dict,  # Pass complete config
             platform_credentials={},  # TODO: Add platform-specific creds when needed
             extra_files=config.extra_files or {},
         )

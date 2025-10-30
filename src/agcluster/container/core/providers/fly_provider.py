@@ -84,20 +84,11 @@ class FlyProvider(ContainerProvider):
         # Convert memory limit to MB (e.g., "4g" -> 4096)
         memory_mb = self._parse_memory_limit(config.memory_limit)
 
-        # Prepare environment variables
+        # Prepare environment variables - use complete agent config
         env = {
             "AGENT_ID": agent_id,
             "ANTHROPIC_API_KEY": config.api_key,
-            "AGENT_CONFIG_JSON": json.dumps(
-                {
-                    "id": config.platform,
-                    "name": f"Agent {agent_id}",
-                    "allowed_tools": config.allowed_tools,
-                    "system_prompt": config.system_prompt,
-                    "permission_mode": "acceptEdits",
-                    "max_turns": config.max_turns,
-                }
-            ),
+            "AGENT_CONFIG_JSON": json.dumps(config.agent_config, default=str),
         }
 
         # Build machine configuration
@@ -175,8 +166,55 @@ class FlyProvider(ContainerProvider):
                 await self._wait_for_health(endpoint_url, timeout=30)
             except TimeoutError:
                 logger.warning(
-                    f"Health check timed out for machine {machine_id}, " f"but machine is running"
+                    f"Health check timed out for machine {machine_id}, but machine is running"
                 )
+
+            # Upload extra files if provided
+            # WARNING: This has timing issues - the Claude SDK may have already initialized
+            # by the time files are uploaded. For a complete fix, agent_server.py needs to
+            # write extra_files from config to /workspace BEFORE initializing SDK.
+            # This approach works for files needed AFTER SDK initialization (e.g., uploaded by user).
+            if config.extra_files:
+                logger.warning(
+                    f"Uploading {len(config.extra_files)} extra files to Fly machine "
+                    f"(Note: SDK may have already initialized, files may not be visible to setting_sources)"
+                )
+                try:
+                    # Prepare files for upload
+                    files_to_upload = [
+                        {"safe_name": file_path, "content": content}
+                        for file_path, content in config.extra_files.items()
+                    ]
+
+                    # Upload via HTTP endpoint
+                    upload_url = f"{endpoint_url}/upload"
+                    form_data = httpx._multipart.MultipartStream(
+                        data={"target_path": "/workspace", "overwrite": "true"},
+                        files=[
+                            ("files", (file_info["safe_name"], file_info["content"]))
+                            for file_info in files_to_upload
+                        ],
+                    )
+
+                    async with httpx.AsyncClient(timeout=60.0) as client:
+                        response = await client.post(
+                            upload_url,
+                            content=form_data,
+                            headers={"Content-Type": form_data.content_type},
+                        )
+                        response.raise_for_status()
+                        logger.info(
+                            f"Uploaded {len(config.extra_files)} extra files to Fly machine"
+                        )
+
+                except Exception as e:
+                    logger.error(f"Error uploading extra files to Fly machine: {e}")
+                    # Continue even if upload fails - don't fail machine creation
+
+            # Create container info with API key hash for session ownership validation
+            import hashlib
+
+            api_key_hash = hashlib.sha256(config.api_key.encode()).hexdigest()
 
             # Create container info
             container_info = ContainerInfo(
@@ -191,6 +229,7 @@ class FlyProvider(ContainerProvider):
                     "private_ip": private_ip,
                     "region": machine_info.get("region", self.region),
                     "app_name": self.app_name,
+                    "api_key_hash": api_key_hash,  # For session ownership validation
                 },
             )
 
@@ -496,8 +535,7 @@ class FlyProvider(ContainerProvider):
                     return
 
                 logger.debug(
-                    f"Machine {machine_id} state: {current_state}, "
-                    f"waiting for {target_state}..."
+                    f"Machine {machine_id} state: {current_state}, waiting for {target_state}..."
                 )
 
             except httpx.HTTPStatusError as e:
@@ -509,7 +547,7 @@ class FlyProvider(ContainerProvider):
             await asyncio.sleep(check_interval)
 
         raise TimeoutError(
-            f"Machine {machine_id} did not reach state '{target_state}' " f"within {timeout}s"
+            f"Machine {machine_id} did not reach state '{target_state}' within {timeout}s"
         )
 
     async def _wait_for_health(

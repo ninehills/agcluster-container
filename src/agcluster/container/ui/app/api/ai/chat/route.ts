@@ -31,7 +31,7 @@ export async function POST(req: Request) {
     }
 
     // Call Claude-native backend endpoint
-    const backendUrl = process.env.AGCLUSTER_API_URL || 'http://api:8000';
+    const backendUrl = process.env.AGCLUSTER_API_URL || 'http://localhost:8000';
     const chatUrl = `${backendUrl}/api/agents/chat`;
 
     // Prepare request body for backend

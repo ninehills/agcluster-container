@@ -56,6 +56,7 @@ class AgentServer:
             try:
                 self.config = json.loads(config_json)
                 logger.info(f"Loaded config: {self.config.get('id')} - {self.config.get('name')}")
+                logger.info(f"Config JSON: {config_json}")
                 logger.info(f"Tools: {self.config.get('allowed_tools')}")
                 logger.info(f"Permission mode: {self.config.get('permission_mode', 'default')}")
                 return
@@ -68,10 +69,13 @@ class AgentServer:
         if config_file.exists():
             logger.info(f"Loading config from {self.config_path}")
             try:
+                config_content = ""
                 with open(config_file, "r") as f:
-                    self.config = json.load(f)
+                    config_content = f.read()
+                    self.config = json.loads(config_content)
 
                 logger.info(f"Loaded config: {self.config.get('id')} - {self.config.get('name')}")
+                logger.info(f"Config JSON: {config_content}")
                 logger.info(f"Tools: {self.config.get('allowed_tools')}")
                 logger.info(f"Permission mode: {self.config.get('permission_mode', 'default')}")
                 return
@@ -94,25 +98,20 @@ class AgentServer:
         """Initialize Claude SDK client (call once at startup)"""
         try:
             from claude_agent_sdk import ClaudeSDKClient, ClaudeAgentOptions
-
             # Build options from config
             options_dict = {
                 "cwd": "/workspace",
                 "allowed_tools": self.config.get("allowed_tools", ["Bash", "Read", "Write"]),
                 "permission_mode": self.config.get("permission_mode", "acceptEdits"),
+                "env": self.config.get("env", {}),
             }
 
+            if self.config.get("setting_sources"):
+                options_dict["setting_sources"] = self.config.get("setting_sources")
+
             # Handle system prompt (string or preset object)
-            system_prompt = self.config.get("system_prompt")
-            if isinstance(system_prompt, dict):
-                # System prompt preset with optional append - convert to string
-                if system_prompt.get("type") == "preset":
-                    # For preset types, use the append text as the system prompt
-                    # The preset itself is handled by Claude SDK internally
-                    options_dict["system_prompt"] = system_prompt.get("append", "")
-            elif isinstance(system_prompt, str):
-                # Direct string prompt
-                options_dict["system_prompt"] = system_prompt
+            if self.config.get("system_prompt"):
+                options_dict["system_prompt"] = self.config.get("system_prompt")
 
             # Add MCP servers if configured
             mcp_servers = self.config.get("mcp_servers", {})
@@ -153,6 +152,10 @@ class AgentServer:
 
             # Configure Claude SDK options
             options = ClaudeAgentOptions(**options_dict)
+
+            # Debug: Print options_dict
+            logger.info("ClaudeAgentOptions:")
+            logger.info(json.dumps(options_dict, indent=2, ensure_ascii=False, default=str))
 
             # Create client (maintains session across queries)
             self.sdk_client = ClaudeSDKClient(options)
@@ -349,10 +352,15 @@ class AgentServer:
 
             # ===== SYSTEM/DEBUG (skip in production responses) =====
             if SystemMessage and isinstance(message, SystemMessage):
+                # Debug: Print full system message data
+                message_data = getattr(message, "data", {})
+                logger.info(f"📋 SystemMessage received:")
+                logger.info(json.dumps(message_data, indent=2, ensure_ascii=False))
+
                 return {
                     "type": "system",
                     "subtype": getattr(message, "subtype", ""),
-                    "session_id": getattr(message, "data", {}).get("session_id", ""),
+                    "session_id": message_data.get("session_id", ""),
                 }
 
             # ===== USER MESSAGES (may contain ToolResultBlock) =====

@@ -109,9 +109,9 @@ class AgentConfig(BaseModel):
         None, description="Filesystem settings to load"
     )
 
-    # Extra files in container
+    # Extra files in container，remove from model_dump()
     extra_files: Optional[Dict[str, bytes]] = Field(
-        None, description="Extra files to mount in the container (key: relative path, value: content in bytes)"
+        None, description="Extra files to mount in the container (key: relative path, value: content in bytes)", exclude=True
     )
 
     # Metadata
@@ -135,7 +135,9 @@ class AgentConfig(BaseModel):
             "TodoWrite",
             "NotebookEdit",
             "BashOutput",
-            "KillBash",
+            "KillShell",
+            "Skill",
+            "SlashCommand",
             "ExitPlanMode",
             "ListMcpResources",
             "ReadMcpResource",

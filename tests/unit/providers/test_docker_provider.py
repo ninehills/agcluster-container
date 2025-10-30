@@ -31,6 +31,26 @@ def provider_config():
 
 
 @pytest.fixture
+def provider_config_with_extra_files():
+    """Create a provider config with extra files for testing."""
+    return ProviderConfig(
+        platform="docker",
+        cpu_quota=200000,
+        memory_limit="4g",
+        storage_limit="10g",
+        allowed_tools=["Bash", "Read", "Write", "Grep"],
+        system_prompt="You are a helpful AI assistant.",
+        max_turns=100,
+        api_key="sk-ant-test-key",
+        platform_credentials={},
+        extra_files={
+            "CLAUDE.md": b"# Project Instructions\nThis is a test project.",
+            "README.md": b"# Test README\nSample readme content.",
+        },
+    )
+
+
+@pytest.fixture
 def mock_docker_client():
     """Create a mock Docker client."""
     client = Mock()
@@ -994,3 +1014,272 @@ class TestWaitForHealth:
             # Should timeout because health check keeps failing
             with pytest.raises(TimeoutError):
                 await provider._wait_for_health("http://172.18.0.5:3000", timeout=1)
+
+
+@pytest.mark.unit
+class TestExtraFilesHandling:
+    """Test extra files pre-population functionality."""
+
+    @pytest.mark.asyncio
+    async def test_create_container_with_extra_files_success(
+        self, provider_config_with_extra_files, mock_container
+    ):
+        """Test container creation with extra files pre-populates volume."""
+        provider = DockerProvider()
+
+        # Mock volume
+        mock_volume = Mock()
+        mock_volume.name = "agcluster-workspace-test"
+        mock_volume.remove = Mock()
+
+        # Mock temporary container for file upload
+        mock_temp_container = Mock()
+        mock_temp_container.id = "temp-container-123"
+        mock_temp_container.put_archive = Mock()
+        mock_temp_container.stop = Mock()
+        mock_temp_container.remove = Mock()
+
+        mock_client = Mock()
+        mock_client.volumes = Mock()
+        mock_client.volumes.create = Mock(return_value=mock_volume)
+        mock_client.volumes.get = Mock(return_value=mock_volume)
+
+        # Mock containers.run to return temp container first, then real container
+        mock_client.containers.run = Mock(side_effect=[mock_temp_container, mock_container])
+
+        provider._docker_client = mock_client
+
+        with patch.object(provider, "_wait_for_health", new_callable=AsyncMock):
+            container_info = await provider.create_container(
+                session_id="session-extra-files", config=provider_config_with_extra_files
+            )
+
+        # Verify volume was created
+        mock_client.volumes.create.assert_called_once()
+        volume_name = mock_client.volumes.create.call_args[1]["name"]
+        assert volume_name.startswith("agcluster-workspace-")
+
+        # Verify temporary container was created for file upload
+        assert mock_client.containers.run.call_count == 2
+
+        # First call should be temp container
+        first_call = mock_client.containers.run.call_args_list[0]
+        assert first_call[1]["command"] == "sleep 5"
+        assert first_call[1]["detach"] is True
+        assert first_call[1]["remove"] is False
+
+        # Verify files were uploaded to temp container
+        mock_temp_container.put_archive.assert_called_once()
+        upload_args = mock_temp_container.put_archive.call_args
+        assert upload_args[0][0] == "/workspace"
+
+        # Verify temp container was cleaned up
+        mock_temp_container.stop.assert_called_once()
+        mock_temp_container.remove.assert_called_once()
+
+        # Second call should be actual agent container
+        second_call = mock_client.containers.run.call_args_list[1]
+        assert second_call[1]["detach"] is True
+        assert "environment" in second_call[1]
+
+        # Verify container info includes volume name
+        assert container_info.metadata["volume_name"] == volume_name
+
+    @pytest.mark.asyncio
+    async def test_create_container_without_extra_files_no_temp_container(
+        self, provider_config, mock_container
+    ):
+        """Test container creation without extra files skips temp container."""
+        provider = DockerProvider()
+
+        mock_volume = Mock()
+        mock_volume.name = "agcluster-workspace-test"
+
+        mock_client = Mock()
+        mock_client.volumes = Mock()
+        mock_client.volumes.create = Mock(return_value=mock_volume)
+        mock_client.volumes.get = Mock(return_value=mock_volume)
+        mock_client.containers.run = Mock(return_value=mock_container)
+
+        provider._docker_client = mock_client
+
+        with patch.object(provider, "_wait_for_health", new_callable=AsyncMock):
+            await provider.create_container(session_id="session-no-files", config=provider_config)
+
+        # Volume should still be created
+        mock_client.volumes.create.assert_called_once()
+
+        # Only one container.run call (no temp container)
+        assert mock_client.containers.run.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_create_container_extra_files_upload_failure_cleanup(
+        self, provider_config_with_extra_files
+    ):
+        """Test cleanup when extra files upload fails."""
+        provider = DockerProvider()
+
+        mock_volume = Mock()
+        mock_volume.name = "agcluster-workspace-fail"
+        mock_volume.remove = Mock()
+
+        mock_temp_container = Mock()
+        mock_temp_container.id = "temp-fail-123"
+        mock_temp_container.put_archive = Mock(side_effect=Exception("Upload failed"))
+        mock_temp_container.stop = Mock()
+        mock_temp_container.remove = Mock()
+
+        mock_client = Mock()
+        mock_client.volumes = Mock()
+        mock_client.volumes.create = Mock(return_value=mock_volume)
+
+        # First call returns temp container, upload will fail
+        mock_client.containers.run = Mock(return_value=mock_temp_container)
+
+        provider._docker_client = mock_client
+
+        # Should raise RuntimeError due to upload failure
+        with pytest.raises(RuntimeError, match="Failed to pre-populate volume"):
+            await provider.create_container(
+                session_id="session-upload-fail", config=provider_config_with_extra_files
+            )
+
+        # Verify cleanup was attempted
+        mock_temp_container.stop.assert_called_once()
+        mock_temp_container.remove.assert_called_once()
+        mock_volume.remove.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_create_container_image_not_found_cleanup_volume(
+        self, provider_config_with_extra_files
+    ):
+        """Test volume cleanup when Docker image not found."""
+        provider = DockerProvider()
+
+        mock_volume = Mock()
+        mock_volume.name = "agcluster-workspace-no-image"
+        mock_volume.remove = Mock()
+
+        mock_client = Mock()
+        mock_client.volumes = Mock()
+        mock_client.volumes.create = Mock(return_value=mock_volume)
+        mock_client.containers.run = Mock(side_effect=docker.errors.ImageNotFound("not found"))
+
+        provider._docker_client = mock_client
+
+        with pytest.raises(ValueError, match="Agent image not found"):
+            await provider.create_container(
+                session_id="session-no-image", config=provider_config_with_extra_files
+            )
+
+        # Volume should be cleaned up
+        mock_volume.remove.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_stop_container_removes_volume(self):
+        """Test stopping container also removes associated volume."""
+        provider = DockerProvider()
+
+        mock_container = Mock()
+        mock_container.id = "container-with-volume"
+        mock_container.stop = Mock()
+        mock_container.remove = Mock()
+
+        mock_volume = Mock()
+        mock_volume.remove = Mock()
+
+        # Add container to active containers with volume name
+        provider.active_containers["session-volume"] = ContainerInfo(
+            container_id="container-with-volume",
+            endpoint_url="http://172.18.0.5:3000",
+            status="running",
+            platform="docker",
+            metadata={
+                "session_id": "session-volume",
+                "volume_name": "agcluster-workspace-test123",
+            },
+        )
+
+        mock_client = Mock()
+        mock_client.containers.get = Mock(return_value=mock_container)
+        mock_client.volumes = Mock()
+        mock_client.volumes.get = Mock(return_value=mock_volume)
+
+        provider._docker_client = mock_client
+
+        result = await provider.stop_container("container-with-volume")
+
+        assert result is True
+        mock_container.stop.assert_called_once()
+        mock_container.remove.assert_called_once()
+
+        # Verify volume was removed
+        mock_client.volumes.get.assert_called_once_with("agcluster-workspace-test123")
+        mock_volume.remove.assert_called_once()
+
+        # Verify removed from active containers
+        assert "session-volume" not in provider.active_containers
+
+    @pytest.mark.asyncio
+    async def test_stop_container_handles_missing_volume(self):
+        """Test stop container handles case when volume doesn't exist."""
+        provider = DockerProvider()
+
+        mock_container = Mock()
+        mock_container.stop = Mock()
+        mock_container.remove = Mock()
+
+        provider.active_containers["session-missing-vol"] = ContainerInfo(
+            container_id="container-no-vol",
+            endpoint_url="http://172.18.0.5:3000",
+            status="running",
+            platform="docker",
+            metadata={"session_id": "session-missing-vol", "volume_name": "missing-volume"},
+        )
+
+        mock_client = Mock()
+        mock_client.containers.get = Mock(return_value=mock_container)
+        mock_client.volumes = Mock()
+        mock_client.volumes.get = Mock(side_effect=docker.errors.NotFound("volume not found"))
+
+        provider._docker_client = mock_client
+
+        # Should not raise exception
+        result = await provider.stop_container("container-no-vol")
+
+        assert result is True
+        mock_container.stop.assert_called_once()
+        mock_container.remove.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_stop_container_without_volume_name(self):
+        """Test stop container when metadata doesn't have volume_name."""
+        provider = DockerProvider()
+
+        mock_container = Mock()
+        mock_container.stop = Mock()
+        mock_container.remove = Mock()
+
+        # Container without volume_name in metadata (legacy)
+        provider.active_containers["session-no-vol-meta"] = ContainerInfo(
+            container_id="container-legacy",
+            endpoint_url="http://172.18.0.5:3000",
+            status="running",
+            platform="docker",
+            metadata={"session_id": "session-no-vol-meta"},
+        )
+
+        mock_client = Mock()
+        mock_client.containers.get = Mock(return_value=mock_container)
+        mock_client.volumes = Mock()
+
+        provider._docker_client = mock_client
+
+        result = await provider.stop_container("container-legacy")
+
+        assert result is True
+        mock_container.stop.assert_called_once()
+        mock_container.remove.assert_called_once()
+
+        # Volume operations should not be called
+        mock_client.volumes.get.assert_not_called()
