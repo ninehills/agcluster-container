@@ -89,35 +89,47 @@ class ContainerManager:
         try:
             if provider_name == "docker":
                 self.provider = ProviderFactory.create_provider(
-                    "docker", network_name=settings.docker_network
+                    "docker",
+                    network_name=settings.docker_network,
+                    agent_image=settings.agent_image,
                 )
             elif provider_name == "fly_machines":
                 # TODO: Implement when FlyProvider is ready
                 logger.warning("Fly Machines provider not yet implemented, falling back to Docker")
                 self.provider = ProviderFactory.create_provider(
-                    "docker", network_name=settings.docker_network
+                    "docker",
+                    network_name=settings.docker_network,
+                    agent_image=settings.agent_image,
                 )
             elif provider_name == "cloudflare":
                 # TODO: Implement when CloudflareProvider is ready
                 logger.warning("Cloudflare provider not yet implemented, falling back to Docker")
                 self.provider = ProviderFactory.create_provider(
-                    "docker", network_name=settings.docker_network
+                    "docker",
+                    network_name=settings.docker_network,
+                    agent_image=settings.agent_image,
                 )
             elif provider_name == "vercel":
                 # TODO: Implement when VercelProvider is ready
                 logger.warning("Vercel provider not yet implemented, falling back to Docker")
                 self.provider = ProviderFactory.create_provider(
-                    "docker", network_name=settings.docker_network
+                    "docker",
+                    network_name=settings.docker_network,
+                    agent_image=settings.agent_image,
                 )
             else:
                 logger.warning(f"Unknown provider {provider_name}, using docker")
                 self.provider = ProviderFactory.create_provider(
-                    "docker", network_name=settings.docker_network
+                    "docker",
+                    network_name=settings.docker_network,
+                    agent_image=settings.agent_image,
                 )
         except Exception as e:
             logger.error(f"Error creating provider {provider_name}: {e}, falling back to docker")
             self.provider = ProviderFactory.create_provider(
-                "docker", network_name=settings.docker_network
+                "docker",
+                network_name=settings.docker_network,
+                agent_image=settings.agent_image,
             )
 
         self.provider_name = provider_name

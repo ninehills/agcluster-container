@@ -178,8 +178,8 @@ class TestCreateContainer:
         mock_client.containers.run.assert_called_once()
         call_args = mock_client.containers.run.call_args
 
-        # Check image
-        assert call_args[1]["image"] == "agcluster/agent:latest"
+        # Check image (should use provider's agent_image, which defaults to settings.agent_image)
+        assert call_args[1]["image"] == provider.agent_image
         assert call_args[1]["detach"] is True
 
         # Check network
@@ -285,7 +285,8 @@ class TestCreateContainer:
         mock_client.containers.run.side_effect = docker.errors.ImageNotFound("image not found")
         provider._docker_client = mock_client
 
-        with pytest.raises(ValueError, match="Agent image not found: agcluster/agent:latest"):
+        # Match should use the provider's agent_image
+        with pytest.raises(ValueError, match=f"Agent image not found: {provider.agent_image}"):
             await provider.create_container(session_id="session-no-image", config=provider_config)
 
     @pytest.mark.asyncio

@@ -26,15 +26,21 @@ class DockerProvider(ContainerProvider):
     Communication with agent containers via HTTP/SSE on port 3000.
     """
 
-    def __init__(self, network_name: str = "agcluster-container_agcluster-network"):
+    def __init__(
+        self,
+        network_name: str = "agcluster-container_agcluster-network",
+        agent_image: str = None,
+    ):
         """
         Initialize Docker provider.
 
         Args:
             network_name: Docker network name for containers
+            agent_image: Docker image for agent containers (defaults to settings.agent_image)
         """
         self._docker_client = None
         self.network_name = network_name
+        self.agent_image = agent_image or settings.agent_image
         self.active_containers: Dict[str, ContainerInfo] = {}
 
     @property
@@ -120,7 +126,7 @@ class DockerProvider(ContainerProvider):
 
                     # Use temporary container to populate volume
                     temp_container = self.docker_client.containers.run(
-                        image="agcluster/agent:latest",
+                        image=self.agent_image,
                         command="sleep 5",
                         volumes={volume_name: {"bind": "/workspace", "mode": "rw"}},
                         detach=True,
@@ -163,7 +169,7 @@ class DockerProvider(ContainerProvider):
 
             # Create the actual agent container with pre-populated volume
             container = self.docker_client.containers.run(
-                image="agcluster/agent:latest",
+                image=self.agent_image,
                 name=container_name,
                 detach=True,
                 # Environment
@@ -237,14 +243,14 @@ class DockerProvider(ContainerProvider):
             return container_info
 
         except docker.errors.ImageNotFound:
-            logger.error("Docker image agcluster/agent:latest not found")
+            logger.error(f"Docker image {self.agent_image} not found")
             # Cleanup volume on failure
             if volume:
                 try:
                     volume.remove()
                 except Exception as e:
                     logger.error(f"Error cleaning up volume on failure: {e}")
-            raise ValueError("Agent image not found: agcluster/agent:latest")
+            raise ValueError(f"Agent image not found: {self.agent_image}")
         except docker.errors.APIError as e:
             logger.error(f"Docker API error creating container: {e}")
             # Cleanup resources on failure
