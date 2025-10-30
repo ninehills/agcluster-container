@@ -1,0 +1,60 @@
+# Research Agent - Web research and analysis specialist
+#
+# Optimized for gathering information from the web, analyzing content,
+# and synthesizing findings into coherent reports.
+id: patent_draft_agent
+name: PatentDraftAgent
+description: 根据输入的专利参考文件，编写专利交底书
+version: 1.0.0
+
+system_prompt: {
+  "type": "preset",
+  "preset": "claude_code"  # Use Claude Code's system prompt
+}
+allowed_tools:
+  - Bash
+  - Read
+  - Write
+  - Edit
+  - Grep
+  - Glob
+  # - WebFetch
+  # - WebSearch
+  - Task
+  - TodoWrite
+  # - NotebookEdit
+  - mcp__google-patents-mcp__search_patents
+  - mcp__exa__web_search_exa
+
+
+mcp_servers:
+  "google-patents-mcp":
+    type: "stdio"
+    command: "npx"
+    args:
+      - "-y"
+      - "@kunihiros/google-patents-mcp"
+    env:
+      SERPAPI_API_KEY: "${SERPAPI_API_KEY}"
+  "exa":
+    type: "stdio"
+    command: "npx"
+    args:
+      - "-y"
+      - "exa-mcp-server"
+    env:
+      EXA_API_KEY: "${EXA_API_KEY}"
+
+
+permission_mode: bypassPermissions
+setting_sources: ["project"]
+env:
+  SERPAPI_API_KEY: "xxxxx"
+  EXA_API_KEY: "xxxxx"
+
+resource_limits:
+  cpu_quota: 100000  # 1 CPU (lighter workload)
+  memory_limit: 2g
+  storage_limit: 5g
+
+max_turns: 50

@@ -34,7 +34,7 @@ env/
 *.swo
 *~
 .DS_Store
-.claude/
+/.claude/
 
 # Environment
 .env
